@@ -44,17 +44,17 @@ def pgd_attack(img, model, opt):
         if 'Linf' in opt.attack:
             x_adv = x_adv + alpha * torch.sign(noise)  # Step in sign(gradient) direction
             x_adv = torch.max(torch.min(x_adv, x_nat + eps), x_nat - eps)  # Clip to Linf ball
-        elif 'L2' in opt.attack:
-            delta = (alpha * torch.sign(noise)).renorm(p=2, dim=0, maxnorm=eps)
-            x_adv = torch.clamp(x_adv + delta, -1, 1).detach()
-        elif 'L1' in opt.attack:
-            delta = (alpha * torch.sign(noise)).renorm(p=1, dim=0, maxnorm=eps)
-            x_adv = torch.clamp(x_adv + delta, -1, 1).detach()
-        elif 'MI' in opt.attack:
-            noise_norm = noise / (torch.mean(torch.abs(noise), dim=(1, 2, 3), keepdim=True) + 1e-8)
-            momentum = decay * momentum + noise_norm
-            x_adv = x_adv.detach() + alpha * torch.sign(momentum)
-            x_adv = torch.clamp(x_adv, x_nat - eps, x_nat + eps).clamp(-1, 1).detach().requires_grad_(True)
+        # elif 'L2' in opt.attack:
+        #     delta = (alpha * torch.sign(noise)).renorm(p=2, dim=0, maxnorm=eps)
+        #     x_adv = torch.clamp(x_adv + delta, -1, 1).detach()
+        # elif 'L1' in opt.attack:
+        #     delta = (alpha * torch.sign(noise)).renorm(p=1, dim=0, maxnorm=eps)
+        #     x_adv = torch.clamp(x_adv + delta, -1, 1).detach()
+        # elif 'MI' in opt.attack:
+        #     noise_norm = noise / (torch.mean(torch.abs(noise), dim=(1, 2, 3), keepdim=True) + 1e-8)
+        #     momentum = decay * momentum + noise_norm
+        #     x_adv = x_adv.detach() + alpha * torch.sign(momentum)
+        #     x_adv = torch.clamp(x_adv, x_nat - eps, x_nat + eps).clamp(-1, 1).detach().requires_grad_(True)
         else:
             raise NotImplementedError(opt.attack)
 
