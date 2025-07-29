@@ -27,11 +27,11 @@ class Exp(MyExp):
         self.val_ann = "/home/saul/proj/YOLOX/datasets/COCO2017/annotations/instances_val2017.json"
         self.test_ann = None
 
-        # self.warmup_epochs = 5
-        # self.max_epoch = 50
+        self.warmup_epochs = 5
+        self.max_epoch = 50
 
-        self.warmup_epochs = 1  # for free adv traiing
-        self.max_epoch = 10  # for free adv traiing
+        # self.warmup_epochs = 1  # for free adv traiing
+        # self.max_epoch = 10  # for free adv traiing
         
         self.min_lr_ratio = 0.05
         self.basic_lr_per_img = 0.01 / 64.0

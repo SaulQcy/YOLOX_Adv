@@ -95,19 +95,19 @@ def make_parser():
         nargs=argparse.REMAINDER,
     )
 
-    parser.add_argument(
-        '--adv_rate',
-        default=0.1,
-        type=float,
-        help='the adversarial training rate, typecally 10%. '
-    )
+    # parser.add_argument(
+    #     '--adv_rate',
+    #     default=0.1,
+    #     type=float,
+    #     help='the adversarial training rate, typecally 10%. '
+    # )
 
-    parser.add_argument(
-        '--adv_mode',
-        default=1,
-        type=int,
-        help='the AE generation method, 1 means Linf PGD attack. '
-    )
+    # parser.add_argument(
+    #     '--adv_mode',
+    #     default=1,
+    #     type=int,
+    #     help='the AE generation method, 1 means Linf PGD attack. '
+    # )
 
     return parser
 
@@ -133,7 +133,8 @@ def main(exp: Exp, args):
 
     # trainer = exp.get_free_adv_trainer(args)
     # trainer = exp.get_baseline_free_adv_trainer(args)
-    trainer = exp.get_mix_free_adv_trainer(args)
+    # trainer = exp.get_mix_free_adv_trainer(args)
+    trainer = exp.get_improved_mix_free_adv_trainer(args)
     # trainer = exp.get_linf_mix_free_adv_trainer(args)
 
     # trainer = exp.get_awp_adv_trainer(args)

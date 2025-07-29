@@ -361,11 +361,6 @@ class Exp(BaseExp):
         trainer = Free_Adv_Trainer(self, args)
         # NOTE: trainer shouldn't be an attribute of exp object
         return trainer
-    def get_frequency_free_adv_trainer(self, args):
-        from yolox.core.adv_trainer import Frequency_Free_Adv_Trainer
-        trainer = Frequency_Free_Adv_Trainer(self, args)
-        # NOTE: trainer shouldn't be an attribute of exp object
-        return trainer
     def get_baseline_free_adv_trainer(self, args):
         from yolox.core.adv_trainer import Baseline_Free_Adv_Trainer
         trainer = Baseline_Free_Adv_Trainer(self, args)
@@ -376,9 +371,9 @@ class Exp(BaseExp):
         trainer = Mix_Free_Adv_Trainer(self, args)
         # NOTE: trainer shouldn't be an attribute of exp object
         return trainer
-    def get_linf_mix_free_adv_trainer(self, args):
-        from yolox.core.adv_trainer import Linf_Mix_Free_Adv_Trainer
-        trainer = Linf_Mix_Free_Adv_Trainer(self, args)
+    def get_improved_mix_free_adv_trainer(self, args):
+        from yolox.core.adv_trainer import Improved_Mix_Free_Adv_Trainer
+        trainer = Improved_Mix_Free_Adv_Trainer(self, args)
         # NOTE: trainer shouldn't be an attribute of exp object
         return trainer
     
