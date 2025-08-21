@@ -134,7 +134,10 @@ def main(exp: Exp, args):
     # trainer = exp.get_free_adv_trainer(args)
     # trainer = exp.get_baseline_free_adv_trainer(args)
     # trainer = exp.get_mix_free_adv_trainer(args)
-    trainer = exp.get_improved_mix_free_adv_trainer(args)
+
+    trainer = exp.get_awp_free_adv_trainer(args)
+    # trainer = exp.get_improved_mix_free_adv_trainer(args)
+
     # trainer = exp.get_linf_mix_free_adv_trainer(args)
 
     # trainer = exp.get_awp_adv_trainer(args)

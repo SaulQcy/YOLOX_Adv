@@ -10,7 +10,6 @@ import torch.nn.functional as F
 import torch.nn as nn
 import torchvision
 
-from adversarial_train.AWP.utils_awp import TradesAWP
 
 
 class Args:
@@ -439,9 +438,6 @@ class Improved_Mix_Free_Adv_Trainer(Trainer):
 
         # global noise init:
         if self.global_noise is None or (isinstance(self.global_noise, torch.Tensor) and self.global_noise.shape != x_nat.shape):
-            # print("-" * 40)
-            # print("next iter, init noise")
-            # print("-" * 40)
             self.global_noise = init_noise(x_nat, epslon)
         
         # adv train
@@ -484,318 +480,86 @@ class Improved_Mix_Free_Adv_Trainer(Trainer):
             **outputs,
         )
 
-
-# class AWP_Adv_Trainer(Trainer):
-#     def __init__(self, exp: Exp, args):
-#         manual_seed(42)
-#         super().__init__(exp, args)
-#         self.adv_rate = args.adv_rate  # e.g., 0.1
-#         self.adv_mode = args.adv_mode  # e.g., 1
-#         print(self.adv_mode, self.adv_rate)
-#         self.opt = OPT
-        
-#     def before_train(self):
-#         super().before_train()
-#         # init proxy model
-#         self.proxy = self.exp.get_model()
-#         if self.exp.warmup_epochs > 0:
-#             lr = self.exp.warmup_lr
-#         else:
-#             lr = self.exp.basic_lr_per_img * 16
-#         pg0, pg1, pg2 = [], [], []  # optimizer parameter groups
-
-#         for k, v in self.proxy.named_modules():
-#             if hasattr(v, "bias") and isinstance(v.bias, nn.Parameter):
-#                 pg2.append(v.bias)  # biases
-#             if isinstance(v, nn.BatchNorm2d) or "bn" in k:
-#                 pg0.append(v.weight)  # no decay
-#             elif hasattr(v, "weight") and isinstance(v.weight, nn.Parameter):
-#                 pg1.append(v.weight)  # apply decay
-#         print(f'pg0 length: {len(pg0)}')
-#         print(f'pg1 length: {len(pg1)}')
-#         print(f'pg2 length: {len(pg2)}')
-
-#         optimizer = torch.optim.SGD(
-#             pg0, lr=lr, momentum=self.exp.momentum, nesterov=True
-#         )
-#         optimizer.add_param_group(
-#             {"params": pg1, "weight_decay": self.exp.weight_decay}
-#         )  # add pg1 with weight_decay
-#         optimizer.add_param_group({"params": pg2})
-#         self.proxy_optim = optimizer
-
-#         self.awp_gamma = 0.005
-#         self.beta = 6.
-#         self.awp_adversary = TradesAWP(model=self.model, 
-#                                        proxy=self.proxy, 
-#                                        proxy_optim=self.proxy_optim, 
-#                                        gamma=self.awp_gamma)
-        
+from adversarial_train.AWP.awp import AWP
+class AWP_Free_Adv_Trainer(Trainer):
+    def __init__(self, exp: Exp, args):
+        manual_seed(42)
+        super().__init__(exp, args)
+        self.opt = OPT
+        assert self.opt.M == self.exp.print_interval
+        self.global_noise = None
+        self.awp = None
+        self.awp_epoch = 10
     
-#     def train_one_iter(self):
-#         iter_start_time = time.time()
-#         inps, targets = self.prefetcher.next()
-#         inps = inps.to(self.data_type)
-#         targets = targets.to(self.data_type)
-#         targets.requires_grad = False
-#         inps, targets = self.exp.preprocess(inps, targets, self.input_size)
-#         data_end_time = time.time()
+    def train_one_iter(self):
+        if self.awp is None and self.epoch > self.awp_epoch:
+            self.awp = AWP(self.model, self.optimizer, adv_lr=5e-3, adv_eps=0.001)
+            print("==> awp is built.")
+        iter_start_time = time.time()
+        inps, targets = self.prefetcher.next()
+        inps = inps.to(self.data_type)
+        targets = targets.to(self.data_type)
+        targets.requires_grad = False
+        inps, targets = self.exp.preprocess(inps, targets, self.input_size)
+        data_end_time = time.time()
+        x_nat = inps.detach()
+        # glob_noise = torch.zeros_like(x_nat).to(x_nat)
 
-#         # PGD adversarial training parameters
-#         alpha = 0.01
-#         num_steps = self.opt.num_iter
+        epslon = self.opt.max_epsilon if torch.max(x_nat) > 1 else self.opt.max_epsilon / 255.
+        alpha = epslon / self.opt.M * 2
+        t_min = torch.min(x_nat)
+        t_max = torch.max(x_nat)
 
-#         x_nat = inps.detach()
-#         torchvision.utils.save_image(x_nat.cpu().detach(), 'AA.png', nrow=4)
+        # global noise init:
+        if self.global_noise is None or (isinstance(self.global_noise, torch.Tensor) and self.global_noise.shape != x_nat.shape):
+            self.global_noise = init_noise(x_nat, epslon)
+        
+        # adv train
+        # print(self.global_noise[0, 0, 0:3, 0:3])
+        noise_batch = self.global_noise.clone().detach().to(x_nat.device)
+        noise_batch.requires_grad = True
+        noise_batch.retain_grad()
+        x_adv = x_nat + noise_batch
+        x_adv = x_adv.clamp(t_min, t_max)
+        outputs = self.model(x_adv, targets)
+        loss = outputs["total_loss"]
 
-#         t_min = torch.min(x_nat)
-#         t_max = torch.max(x_nat)
-#         eps = self.opt.max_epsilon / 255. if t_max <=1 else self.opt.max_epsilon
+        # update model param.
+        self.optimizer.zero_grad()
+        self.scaler.scale(loss).backward(retain_graph=True)
+        self.scaler.unscale_(self.optimizer)
 
-#         if random.random() < self.opt.ar:
-#             # gen. adv. sample
-#             x_adv = x_nat.detach() + 0.001 * torch.zeros_like(x_nat).uniform_(-eps, eps).to(x_nat.device)
-#             self.model.eval()
-#             for _ in range(num_steps):
-#                 x_adv = x_adv.clone().detach().requires_grad_(True)
-#                 loss = self.model(x_adv, targets).mean()
-#                 grad = torch.autograd.grad(loss, x_adv, retain_graph=False, create_graph=False)[0]
-#                 noise = alpha * torch.sign(grad.detach())
-#                 x_adv = x_adv.detach() + noise
-#                 x_adv = torch.min(torch.max(x_adv, x_nat - eps), x_nat + eps)
-#                 x_adv = torch.clamp(x_adv, t_min, t_max)
+        if self.epoch > self.awp_epoch and self.awp is not None:
+            loss = self.awp.attack_backward(inps=x_adv, targets=targets)
+            if loss is not None:
+                self.scaler.scale(loss).backward()
+                self.scaler.unscale_(self.optimizer)
+            self.awp._restore()     
 
-#             # Final update using adversarial examples
-#             self.model.train()
-#             x_adv = x_adv.clone().detach().requires_grad_(True)
-#             awp = self.awp_adversary.calc_awp(inputs_adv=x_adv,
-#                                          inputs_clean=x_nat,
-#                                          target=targets,
-#                                          beta=self.beta)
-#             self.awp_adversary.perturb(awp)
-#         else:
-#             x_adv = x_nat.detach()
-#         outputs = self.model(x_adv, targets)
-#         loss = outputs["total_loss"]
+        # update pert.
+        grad = noise_batch.grad
+        pert = alpha * torch.sign(grad)
+        self.global_noise += pert.data
+        self.global_noise.clamp_(-epslon, epslon)
 
-#         self.optimizer.zero_grad()
-#         self.scaler.scale(loss).backward()
-#         self.scaler.unscale_(self.optimizer)
-#         self.scaler.step(self.optimizer)
-#         self.scaler.update()
+        self.scaler.step(self.optimizer)
+        self.scaler.update()
 
-#         if self.use_model_ema:
-#             self.ema_model.update(self.model)
+        if self.use_model_ema:
+            self.ema_model.update(self.model)
 
-#         lr = self.lr_scheduler.update_lr(self.progress_in_iter + 1)
-#         for param_group in self.optimizer.param_groups:
-#             param_group["lr"] = lr
+        lr = self.lr_scheduler.update_lr(self.progress_in_iter + 1)
+        for param_group in self.optimizer.param_groups:
+            param_group["lr"] = lr
 
-#         iter_end_time = time.time()
-#         self.meter.update(
-#             iter_time=iter_end_time - iter_start_time,
-#             data_time=data_end_time - iter_start_time,
-#             lr=lr,
-#             **outputs,
-#         )
-
-#     def resume_train(self, model):
-#         model = super().resume_train(model)
-#         if self.args.resume:
-#             if self.args.ckpt is None:
-#                 import os
-#                 ckpt_file = os.path.join(self.file_name, "latest" + "_ckpt.pth")
-#             else:
-#                 ckpt_file = self.args.ckpt
-
-#             ckpt = torch.load(ckpt_file, map_location=self.device, weights_only=False)
-#             self.awp_adversary = ckpt['awp_adversary']
-#         return model
-
-#     def save_ckpt(self, ckpt_name, update_best_ckpt=False, ap=None):
-#         if self.rank == 0:
-#             save_model = self.ema_model.ema if self.use_model_ema else self.model
-#             ckpt_state = {
-#                 "start_epoch": self.epoch + 1,
-#                 "model": save_model.state_dict(),
-#                 "optimizer": self.optimizer.state_dict(),
-#                 "best_ap": self.best_ap,
-#                 "curr_ap": ap,
-#                 # for AWP adversarial training
-#                 "awp_adversary": self.awp_adversary,
-#             }
-#             from yolox.utils.checkpoint import save_checkpoint
-#             save_checkpoint(
-#                 ckpt_state,
-#                 update_best_ckpt,
-#                 self.file_name,
-#                 ckpt_name,
-#             )
-
-#             # if self.args.logger == "wandb":
-#             #     self.wandb_logger.save_checkpoint(
-#             #         self.file_name,
-#             #         ckpt_name,
-#             #         update_best_ckpt,
-#             #         metadata={
-#             #             "epoch": self.epoch + 1,
-#             #             "optimizer": self.optimizer.state_dict(),
-#             #             "best_ap": self.best_ap,
-#             #             "curr_ap": ap
-#             #         }
-#             #     )
-
-
-# class Free_AWP_Adv_Trainer(Trainer):
-#     def __init__(self, exp: Exp, args):
-#         manual_seed(42)
-#         super().__init__(exp, args)
-#         self.opt = OPT
-#         self.M = 8
-    
-#     def train_one_iter(self):
-#         iter_start_time = time.time()
-#         inps, targets = self.prefetcher.next()
-#         inps = inps.to(self.data_type)
-#         targets = targets.to(self.data_type)
-#         targets.requires_grad = False
-#         inps, targets = self.exp.preprocess(inps, targets, self.input_size)
-#         data_end_time = time.time()
-#         x_nat = inps.detach()
-#         glob_noise = torch.zeros_like(x_nat).to(x_nat)
-#         t_max = torch.max(x_nat)
-#         t_min = torch.min(x_nat)
-#         epslon = self.opt.max_epsilon if t_max > 1 else self.opt.max_epsilon / 255.
-#         for _ in range(self.M):
-#             noise_batch = glob_noise.clone().detach().to(x_nat.device)
-#             noise_batch.requires_grad = True
-#             noise_batch.retain_grad()
-#             x_adv = x_nat + noise_batch
-#             x_adv = x_adv.clamp(0., 255.)
-#             outputs = self.model(x_adv, targets)
-#             loss = outputs["total_loss"]
-
-#             # update model param.
-#             self.optimizer.zero_grad()
-#             self.scaler.scale(loss).backward()
-#             self.scaler.unscale_(self.optimizer)
-
-#             # update pert.
-#             grad = noise_batch.grad
-#             # pert = fgsm(noise_batch.grad, configs.ADV.fgsm_step)
-#             pert = 0.01 * torch.sign(grad)
-#             glob_noise[0:inps.size(0)] += pert.data
-#             glob_noise.clamp_(-epslon, epslon)
-
-#             self.scaler.step(self.optimizer)
-#             self.scaler.update()
-
-#             if self.use_model_ema:
-#                 self.ema_model.update(self.model)
-
-#         self.model.train()
-#         x_adv = x_nat + noise_batch
-#         x_adv = x_adv.clamp(t_min, t_max)
-#         x_adv = x_adv.clone().detach().requires_grad_(True)
-#         awp = self.awp_adversary.calc_awp(inputs_adv=x_adv,
-#                                         inputs_clean=x_nat,
-#                                         target=targets,
-#                                         beta=self.beta)
-#         self.awp_adversary.perturb(awp)
-#         outputs = self.model(x_adv, targets)
-#         loss = outputs["total_loss"]
-
-#         self.optimizer.zero_grad()
-#         self.scaler.scale(loss).backward()
-#         self.scaler.unscale_(self.optimizer)
-#         self.scaler.step(self.optimizer)
-#         self.scaler.update()
-
-#         if self.use_model_ema:
-#             self.ema_model.update(self.model)
-
-#         lr = self.lr_scheduler.update_lr(self.progress_in_iter + 1)
-#         for param_group in self.optimizer.param_groups:
-#             param_group["lr"] = lr
-
-#         iter_end_time = time.time()
-#         self.meter.update(
-#             iter_time=iter_end_time - iter_start_time,
-#             data_time=data_end_time - iter_start_time,
-#             lr=lr,
-#             **outputs,
-#         )
-
-#     def before_train(self):
-#         super().before_train()
-#         # init proxy model
-#         self.proxy = self.exp.get_model()
-#         if self.exp.warmup_epochs > 0:
-#             lr = self.exp.warmup_lr
-#         else:
-#             lr = self.exp.basic_lr_per_img * 16
-#         pg0, pg1, pg2 = [], [], []  # optimizer parameter groups
-
-#         for k, v in self.proxy.named_modules():
-#             if hasattr(v, "bias") and isinstance(v.bias, nn.Parameter):
-#                 pg2.append(v.bias)  # biases
-#             if isinstance(v, nn.BatchNorm2d) or "bn" in k:
-#                 pg0.append(v.weight)  # no decay
-#             elif hasattr(v, "weight") and isinstance(v.weight, nn.Parameter):
-#                 pg1.append(v.weight)  # apply decay
-#         print(f'pg0 length: {len(pg0)}')
-#         print(f'pg1 length: {len(pg1)}')
-#         print(f'pg2 length: {len(pg2)}')
-
-#         optimizer = torch.optim.SGD(
-#             pg0, lr=lr, momentum=self.exp.momentum, nesterov=True
-#         )
-#         optimizer.add_param_group(
-#             {"params": pg1, "weight_decay": self.exp.weight_decay}
-#         )  # add pg1 with weight_decay
-#         optimizer.add_param_group({"params": pg2})
-#         self.proxy_optim = optimizer
-
-#         self.awp_gamma = 0.005
-#         self.beta = 6.
-#         self.awp_adversary = TradesAWP(model=self.model, 
-#                                        proxy=self.proxy, 
-#                                        proxy_optim=self.proxy_optim, 
-#                                        gamma=self.awp_gamma)
-
-#     def resume_train(self, model):
-#         model = super().resume_train(model)
-#         if self.args.resume:
-#             if self.args.ckpt is None:
-#                 import os
-#                 ckpt_file = os.path.join(self.file_name, "latest" + "_ckpt.pth")
-#             else:
-#                 ckpt_file = self.args.ckpt
-
-#             ckpt = torch.load(ckpt_file, map_location=self.device, weights_only=False)
-#             self.awp_adversary = ckpt['awp_adversary']
-#         return model
-
-#     def save_ckpt(self, ckpt_name, update_best_ckpt=False, ap=None):
-#         if self.rank == 0:
-#             save_model = self.ema_model.ema if self.use_model_ema else self.model
-#             ckpt_state = {
-#                 "start_epoch": self.epoch + 1,
-#                 "model": save_model.state_dict(),
-#                 "optimizer": self.optimizer.state_dict(),
-#                 "best_ap": self.best_ap,
-#                 "curr_ap": ap,
-#                 # for AWP adversarial training
-#                 "awp_adversary": self.awp_adversary,
-#             }
-#             from yolox.utils.checkpoint import save_checkpoint
-#             save_checkpoint(
-#                 ckpt_state,
-#                 update_best_ckpt,
-#                 self.file_name,
-#                 ckpt_name,
-#             )
-
+        iter_end_time = time.time()
+        self.meter.update(
+            iter_time=iter_end_time - iter_start_time,
+            data_time=data_end_time - iter_start_time,
+            lr=lr,
+            **outputs,
+        )
+  
 
 
 def init_noise(x_nat, epslon):
@@ -815,3 +579,5 @@ def init_noise(x_nat, epslon):
     else:
         raise ValueError(noise_init)
     return tmp
+
+

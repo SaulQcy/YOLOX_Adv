@@ -201,7 +201,7 @@ def main(exp, args, num_gpu):
             'sigma': 16.0,
             'momentum': 1.0,
             'num_iter': 4,
-            'max_epsilon': 5.,
+            'max_epsilon': 64.,
             'rho': 0.5,
             'bs': 8,
             'max_len': 2000,

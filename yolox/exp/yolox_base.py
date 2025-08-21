@@ -376,17 +376,9 @@ class Exp(BaseExp):
         trainer = Improved_Mix_Free_Adv_Trainer(self, args)
         # NOTE: trainer shouldn't be an attribute of exp object
         return trainer
-    
-    def get_awp_adv_trainer(self, args):
-        from yolox.core.adv_trainer import AWP_Adv_Trainer
-        trainer = AWP_Adv_Trainer(self, args)
-        # NOTE: trainer shouldn't be an attribute of exp object
-        return trainer
-    
-
-    def get_free_awp_adv_trainer(self, args):
-        from yolox.core.adv_trainer import Free_AWP_Adv_Trainer
-        trainer = Free_AWP_Adv_Trainer(self, args)
+    def get_awp_free_adv_trainer(self, args):
+        from yolox.core.adv_trainer import AWP_Free_Adv_Trainer
+        trainer = AWP_Free_Adv_Trainer(self, args)
         # NOTE: trainer shouldn't be an attribute of exp object
         return trainer
 

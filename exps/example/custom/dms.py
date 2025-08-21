@@ -29,6 +29,8 @@ class Exp(MyExp):
 
         self.warmup_epochs = 5
         self.max_epoch = 50
+        # self.warmup_epochs = 10
+        # self.max_epoch = 100
 
         # self.warmup_epochs = 1  # for free adv traiing
         # self.max_epoch = 10  # for free adv traiing
